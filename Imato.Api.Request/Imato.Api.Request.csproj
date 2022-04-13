@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+	<PropertyGroup>
+		<PackageId>Imato.Api.Request</PackageId>
+		<Title>Imato.Api.Request</Title>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<Authors>Alexey Varentsov (@imato)</Authors>
+		<Company>Imato</Company>
+		<PackageProjectUrl>https://github.com/Imato/Imato.Api.Request</PackageProjectUrl>
+		<Description>Utils for using REST API</Description>
+		<Summary></Summary>
+		<RepositoryUrl>https://github.com/Imato/Imato.Api.Request</RepositoryUrl>
+		<PackageTags>rest api utils</PackageTags>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReleaseNotes>Ready to use</PackageReleaseNotes>
+		<Version>1.0.1</Version>
+		<AssemblyName>Imato.Api.Request</AssemblyName>
+		<PackageIcon>icon.png</PackageIcon>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<DebugType>embedded</DebugType>
+		<Copyright>Alexey Varentsov</Copyright>
+		<RequireLicenseAcceptance>false</RequireLicenseAcceptance>
+	</PropertyGroup>
+	
+	<ItemGroup>
+		<None Include="icon.png" Pack="true" Visible="false" PackagePath="" />
+	</ItemGroup>
+</Project>
