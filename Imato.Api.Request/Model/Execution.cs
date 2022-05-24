@@ -94,7 +94,7 @@
     public class Execution<T> : Execution
     {
         private List<Func<CancellationToken, Task<T>>> onExecute = new List<Func<CancellationToken, Task<T>>>();
-        public T? Default { get; set; } = default;
+        internal T? Default { get; set; }
 
         internal void AddFunction(Func<Task<T>> func)
         {
@@ -115,6 +115,7 @@
         {
             var resutl = await GetResult();
             if (resutl != null) return resutl;
+            if (Default != null) return Default;
             throw new Exception("Empty result");
         }
 

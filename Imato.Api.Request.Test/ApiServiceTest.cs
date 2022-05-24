@@ -1,10 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
-using Imato.Api.Request.Services;
 using NUnit.Framework;
 
 namespace Imato.Api.Request.Test
@@ -33,29 +29,53 @@ namespace Imato.Api.Request.Test
         public async Task Get()
         {
             var result = await service.Get<NewActivity>("/activity");
-            Assert.False(string.IsNullOrEmpty(result.Activity));
-            Assert.False(string.IsNullOrEmpty(result.Type));
-            Assert.False(string.IsNullOrEmpty(result.Key));
-            Assert.IsTrue(result.Accessibility > 0);
+            Assert.False(string.IsNullOrEmpty(result?.Activity));
+            Assert.False(string.IsNullOrEmpty(result?.Type));
+            Assert.False(string.IsNullOrEmpty(result?.Key));
+            Assert.IsTrue(result?.Accessibility > 0);
 
             result = await service.Get<NewActivity>(path: "/activity", queryParams: new { type = "education" });
-
-            var postResult = await service.Post<ApiResult>(path: "/activity",
-                    queryParams: new { key = "100" },
-                    data: new NewActivity
-                    {
-                        Activity = "Test"
-                    });
-
-            Assert.False(string.IsNullOrEmpty(result.Activity));
-            Assert.False(string.IsNullOrEmpty(result.Type));
-            Assert.IsNotEmpty(result.Key);
+            Assert.False(string.IsNullOrEmpty(result?.Activity));
+            Assert.False(string.IsNullOrEmpty(result?.Type));
+            Assert.IsNotEmpty(result?.Key);
         }
 
         [Test]
-        public async Task GetError()
+        public void GetError()
         {
             Assert.ThrowsAsync<HttpRequestException>(async () => await service.Get<NewActivity>("/activi"));
+        }
+
+        [Test]
+        public void QueryStringTest()
+        {
+            var qs = "";
+            var result = service.QueryString("");
+            Assert.AreEqual(qs, result);
+            result = service.QueryString(null);
+            Assert.AreEqual(qs, result);
+            result = service.QueryString("test");
+            Assert.AreEqual(qs, result);
+            result = service.QueryString(2);
+            Assert.AreEqual(qs, result);
+            result = service.QueryString(new int[] { 1, 2, 3 });
+            Assert.AreEqual(qs, result);
+
+            result = service.QueryString(new TestClass
+            {
+                Test1 = 1,
+                Test2 = "t",
+                Test3 = DateTime.Parse("2022-01-01 01:12:12.432"),
+                Test4 = new int[] { 1, 2, 3 }
+            });
+            Assert.AreEqual("?Test1=1&Test2=t&Test3=2022-01-01T01:12:12.000Z&Test4=1,2,3",
+                result);
+
+            result = service.QueryString(new { test1 = "", test4 = new int[0] });
+            Assert.AreEqual("", result);
+
+            result = service.QueryString(new TestClass { Test5 = "test" });
+            Assert.AreEqual("?Test1=0", result);
         }
     }
 }

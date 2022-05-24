@@ -52,6 +52,7 @@ await Try
     .Function(() => testFunc2(2))
     .Function(() => testFunc2(3))
     .OnError((ex) => errorCount++)
+    .OnError((ex) => Console.WriteLine(ex.Message))
     .Setup(options)
     .Execute();
 
@@ -62,7 +63,7 @@ await Try
 ```csharp
 using Imato.Api.Request;
 
-// Create service or use
+// Create service
 var service = new ApiService(new ApiOptions
 {
     ApiUrl = "https://www.boredapi.com/api",
