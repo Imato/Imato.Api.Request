@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Imato.Api.Request.Model;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
@@ -24,7 +25,9 @@ namespace Imato.Api.Request
 
         private async Task<HttpClient> GetClient()
         {
-            var http = new HttpClient();
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+            var http = new HttpClient(handler);
             http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
             http.Timeout = TimeSpan.FromMilliseconds(this.options.TryOptions.Timeout > 0 ? this.options.TryOptions.Timeout : 30000);
             if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(this.options.ApiUrl);
@@ -144,13 +147,13 @@ namespace Imato.Api.Request
             await exec.Execute();
         }
 
-        public async Task<T?> Get<T>(string path, object? queryParams = null)
+        public async Task<T?> Get<T>(string path, object? queryParams = null, string jsonPath = "")
         {
             return await GetResult(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams));
-                return await Parse<T>(response);
+                return await Parse<T>(response, jsonPath);
             });
         }
 
@@ -163,13 +166,13 @@ namespace Imato.Api.Request
             });
         }
 
-        public async Task<T?> Delete<T>(string path, object? queryParams = null)
+        public async Task<T?> Delete<T>(string path, object? queryParams = null, string jsonPath = "")
         {
             return await GetResult(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.DeleteAsync(GetApiUrl(path, queryParams));
-                return await Parse<T>(response);
+                return await Parse<T>(response, jsonPath);
             });
         }
 
@@ -183,12 +186,13 @@ namespace Imato.Api.Request
         }
 
         private async Task<T?> Send<T>(object data,
-                Func<HttpContent, Task<HttpResponseMessage>> func)
+                Func<HttpContent, Task<HttpResponseMessage>> func,
+                string jsonPath = "")
         {
             return await GetResult(async () =>
             {
                 using var response = await func(Serialize(data));
-                return await Parse<T>(response);
+                return await Parse<T>(response, jsonPath);
             });
         }
 
@@ -251,7 +255,17 @@ namespace Imato.Api.Request
 
             var str = await response.Content.ReadAsStringAsync();
             var result = TryDeserialize<ApiResult>(str);
-            var error = result?.ErrorMessage ?? result?.Error;
+            var error = result?.ErrorMessage ?? result?.Error ?? "";
+            if (result?.Errors != null && result.Errors.Length > 0)
+            {
+                foreach (var err in result.Errors)
+                {
+                    foreach (var key in err.Keys)
+                    {
+                        error += $"{key}: {err[key]}. ";
+                    }
+                }
+            }
 
             if (!response.IsSuccessStatusCode || !string.IsNullOrEmpty(error))
             {
@@ -267,10 +281,10 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T> Parse<T>(HttpResponseMessage response)
+        private async Task<T> Parse<T>(HttpResponseMessage response, string jsonPath = "")
         {
             var str = await Validate(response);
-            return Deserialize<T>(str);
+            return Deserialize<T>(str, jsonPath);
         }
 
         public static HttpContent Serialize(object data)
@@ -279,12 +293,30 @@ namespace Imato.Api.Request
             return new StringContent(str, Encoding.UTF8, "application/json");
         }
 
-        public static T Deserialize<T>(string str)
+        public static T Deserialize<T>(string str, string jsonPath = "")
         {
             try
             {
-                return JsonSerializer.Deserialize<T>(str, jsonSerializerOptions)
-                    ?? throw new HttpRequestException("Result is empty");
+                if (jsonPath == "")
+                {
+                    return JsonSerializer.Deserialize<T>(str, jsonSerializerOptions)
+                        ?? throw new EmptyException();
+                }
+                else
+                {
+                    var element = JsonSerializer.Deserialize<JsonElement>(str);
+                    if (element.TryGetProperty(jsonPath, out var property))
+                    {
+                        if (property.ValueKind == JsonValueKind.Undefined ||
+                            property.ValueKind == JsonValueKind.Null)
+                        {
+                            throw new EmptyException();
+                        }
+
+                        return property.Deserialize<T>(jsonSerializerOptions) ?? throw new EmptyException();
+                    }
+                    throw new EmptyException();
+                }
             }
             catch
             {

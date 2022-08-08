@@ -6,5 +6,6 @@
         public string? Message { get; set; }
         public string? ErrorMessage { get; set; }
         public string? Error { get; set; }
+        public Dictionary<string, string[]>[]? Errors { get; set; }
     }
 }

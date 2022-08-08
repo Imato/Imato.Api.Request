@@ -26,6 +26,14 @@ namespace Imato.Api.Request.Test
         }
 
         [Test]
+        public void Deserialize()
+        {
+            var str = @"{""result"": {""activity"":""Research a topic you're interested in"",""type"":""education"",""participants"":1,""price"":0,""link"":"""",""key"":""3561421"",""accessibility"":0.9}}";
+            var result = ApiService.Deserialize<NewActivity>(str, "result");
+            Assert.AreEqual("3561421", result.Key);
+        }
+
+        [Test]
         public async Task Get()
         {
             var result = await service.Get<NewActivity>("/activity");
