@@ -92,6 +92,18 @@
         /// <typeparam name="T"></typeparam>
         /// <param name="func"></param>
         public static Execution Function(this Execution execution,
+            Func<Task> func)
+        {
+            execution.AddFunction(func);
+            return execution;
+        }
+
+        /// <summary>
+        /// Add executed function to pipeline
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="func"></param>
+        public static Execution Function(this Execution execution,
             Func<CancellationToken, Task> func)
         {
             execution.AddFunction(func);

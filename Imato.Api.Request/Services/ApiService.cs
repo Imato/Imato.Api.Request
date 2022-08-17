@@ -9,6 +9,7 @@ namespace Imato.Api.Request
     public class ApiService
     {
         private ApiOptions options;
+        private static CancellationToken noToken = CancellationToken.None;
 
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
         {
@@ -147,41 +148,51 @@ namespace Imato.Api.Request
             await exec.Execute();
         }
 
-        public async Task<T?> Get<T>(string path, object? queryParams = null, string jsonPath = "")
+        public async Task<T?> Get<T>(string path,
+            object? queryParams = null,
+            string jsonPath = "",
+            CancellationToken? token = null)
         {
             return await GetResult(async () =>
             {
                 using var http = await GetClient();
-                using var response = await http.GetAsync(GetApiUrl(path, queryParams));
+                using var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
                 return await Parse<T>(response, jsonPath);
             });
         }
 
-        public async Task Get(string path, object? queryParams = null)
+        public async Task Get(string path,
+            object? queryParams = null,
+            CancellationToken? token = null)
         {
             await Execute(async () =>
             {
                 using var http = await GetClient();
-                await http.GetAsync(GetApiUrl(path, queryParams));
+                await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
-        public async Task<T?> Delete<T>(string path, object? queryParams = null, string jsonPath = "")
+        public async Task<T?> Delete<T>(string path,
+            object? queryParams = null,
+            string jsonPath = "",
+            CancellationToken? token = null)
         {
             return await GetResult(async () =>
             {
                 using var http = await GetClient();
-                using var response = await http.DeleteAsync(GetApiUrl(path, queryParams));
+                using var response = await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
                 return await Parse<T>(response, jsonPath);
             });
         }
 
-        public async Task Delete(string path, object? queryParams = null)
+        public async Task Delete(string path,
+            object? queryParams = null,
+            CancellationToken? token = null)
         {
             await Execute(async () =>
             {
                 using var http = await GetClient();
-                await http.DeleteAsync(GetApiUrl(path, queryParams));
+                await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
@@ -206,43 +217,59 @@ namespace Imato.Api.Request
             });
         }
 
-        public async Task<T?> Post<T>(string path, object data, object? queryParams = null)
+        public async Task<T?> Post<T>(string path,
+            object data,
+            object? queryParams = null,
+            string jsonPath = "",
+            CancellationToken? token = null)
         {
             return await Send<T>(data,
                 async (content) =>
                 {
                     using var http = await GetClient();
-                    return await http.PostAsync(GetApiUrl(path, queryParams), content);
-                });
+                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
+                },
+                jsonPath);
         }
 
-        public async Task<T?> Put<T>(string path, object data, object? queryParams = null)
+        public async Task<T?> Put<T>(string path,
+            object data,
+            object? queryParams = null,
+            string jsonPath = "",
+            CancellationToken? token = null)
         {
             return await Send<T>(data,
                 async (content) =>
                 {
                     var http = await GetClient();
-                    return await http.PutAsync(GetApiUrl(path, queryParams), content);
-                });
+                    return await http.PutAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
+                },
+                jsonPath);
         }
 
-        public async Task Post(string path, object data, object? queryParams = null)
+        public async Task Post(string path,
+            object data, object?
+            queryParams = null,
+            CancellationToken? token = null)
         {
             await Send(data,
                 async (content) =>
                 {
                     using var http = await GetClient();
-                    return await http.PostAsync(GetApiUrl(path, queryParams), content);
+                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 });
         }
 
-        public async Task Put(string path, object data, object? queryParams = null)
+        public async Task Put(string path,
+            object data, object?
+            queryParams = null,
+            CancellationToken? token = null)
         {
             await Send(data,
                 async (content) =>
                 {
                     using var http = await GetClient();
-                    return await http.PutAsync(GetApiUrl(path, queryParams), content);
+                    return await http.PutAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 });
         }
 
@@ -318,9 +345,9 @@ namespace Imato.Api.Request
                     throw new EmptyException();
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                throw new HttpRequestException($"Cannot parse response {str}");
+                throw new HttpRequestException($"Cannot parse response {str}", ex);
             }
         }
 
