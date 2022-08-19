@@ -26,12 +26,16 @@ namespace Imato.Api.Request
 
         private async Task<HttpClient> GetClient()
         {
-            var handler = new HttpClientHandler();
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-            var http = new HttpClient(handler);
+            HttpClientHandler? handler = null;
+            if (options.IgnoreSslErrors)
+            {
+                handler = new HttpClientHandler();
+                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+            }
+            var http = handler != null ? new HttpClient(handler) : new HttpClient();
             http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
-            http.Timeout = TimeSpan.FromMilliseconds(this.options.TryOptions.Timeout > 0 ? this.options.TryOptions.Timeout : 30000);
-            if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(this.options.ApiUrl);
+            http.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
+            if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(options.ApiUrl);
             if (ConfigureRequest != null) await ConfigureRequest(http);
             return http;
         }

@@ -6,5 +6,6 @@ namespace Imato.Api.Request
     {
         public string ApiUrl { get; set; } = string.Empty;
         public TryOptions TryOptions { get; set; } = new TryOptions();
+        public bool IgnoreSslErrors { get; set; }
     }
 }
