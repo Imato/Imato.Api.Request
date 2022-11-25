@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Imato.Try;
 using NUnit.Framework;
 
 namespace Imato.Api.Request.Test
@@ -10,10 +11,7 @@ namespace Imato.Api.Request.Test
         private ApiService service = new ApiService(new ApiOptions
         {
             ApiUrl = "https://www.boredapi.com/api",
-            TryOptions = new TryOptions
-            {
-                Timeout = 3000
-            }
+            Timeout = 3000
         });
 
         [Test]
@@ -36,13 +34,13 @@ namespace Imato.Api.Request.Test
         [Test]
         public async Task Get()
         {
-            var result = await service.Get<NewActivity>("/activity");
+            var result = await service.GetAsync<NewActivity>("/activity");
             Assert.False(string.IsNullOrEmpty(result?.Activity));
             Assert.False(string.IsNullOrEmpty(result?.Type));
             Assert.False(string.IsNullOrEmpty(result?.Key));
             Assert.IsTrue(result?.Accessibility > 0);
 
-            result = await service.Get<NewActivity>(path: "/activity", queryParams: new { type = "education" });
+            result = await service.GetAsync<NewActivity>(path: "/activity", queryParams: new { type = "education" });
             Assert.False(string.IsNullOrEmpty(result?.Activity));
             Assert.False(string.IsNullOrEmpty(result?.Type));
             Assert.IsNotEmpty(result?.Key);
@@ -51,7 +49,7 @@ namespace Imato.Api.Request.Test
         [Test]
         public void GetError()
         {
-            Assert.ThrowsAsync<HttpRequestException>(async () => await service.Get<NewActivity>("/activi"));
+            Assert.ThrowsAsync<HttpRequestException>(async () => await service.GetAsync<NewActivity>("/activi"));
         }
 
         [Test]

@@ -1,6 +1,7 @@
-﻿using Imato.Api.Request.Model;
+﻿using Imato.Try;
 using System.Collections;
-using System.Collections.Generic;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -13,7 +14,8 @@ namespace Imato.Api.Request
 
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
         public EventHandler<Exception>? OnError;
@@ -34,7 +36,7 @@ namespace Imato.Api.Request
             }
             var http = handler != null ? new HttpClient(handler) : new HttpClient();
             http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
-            http.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
+            http.Timeout = TimeSpan.FromMilliseconds(options.Timeout > 0 ? options.Timeout : 30000);
             if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(options.ApiUrl);
             if (ConfigureRequest != null) await ConfigureRequest(http);
             return http;
@@ -47,10 +49,10 @@ namespace Imato.Api.Request
 
         private TryOptions TryOptions => new TryOptions
         {
-            Delay = options.TryOptions.Delay,
-            ErrorOnFail = options.TryOptions.ErrorOnFail,
-            RetryCount = options.TryOptions.RetryCount,
-            Timeout = options.TryOptions.Timeout
+            Delay = options.Delay,
+            ErrorOnFail = options.ErrorOnFail,
+            RetryCount = options.RetryCount,
+            Timeout = options.Timeout
         };
 
         public string GetApiUrl(string path, object? queryParams = null)
@@ -132,102 +134,116 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T?> GetResult<T>(Func<Task<T>> func)
+        private async Task<T?> GetResultAsync<T>(Func<Task<T>> func)
         {
-            var exec = Try
+            return await Try.Try
                  .Function(func)
                  .OnError(OnError != null ? e => OnError.Invoke(this, e) : e => throw e)
-                 .Setup(TryOptions);
-
-            return await exec.GetResult();
+                 .Setup(TryOptions)
+                 .GetResultAsync();
         }
 
-        private async Task Execute(Func<Task> func)
+        private async Task ExecuteAsync(Func<Task> func)
         {
-            var exec = Try
+            await Try.Try
                 .Function(func)
                 .OnError(OnError != null ? e => OnError.Invoke(this, e) : e => throw e)
-                .Setup(TryOptions);
-
-            await exec.Execute();
+                .Setup(TryOptions)
+                .ExecuteAsync();
         }
 
-        public async Task<T?> Get<T>(string path,
+        public async Task<Stream?> GetStreamAsync(string path,
+            object? queryParams = null,
+            CancellationToken? token = null)
+        {
+            return await GetResultAsync(async () =>
+            {
+                var http = await GetClient();
+                var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
+                return await response.Content.ReadAsStreamAsync();
+            });
+        }
+
+        public async Task<T?> GetAsync<T>(string path,
             object? queryParams = null,
             string jsonPath = "",
             CancellationToken? token = null)
         {
-            return await GetResult(async () =>
+            return await GetResultAsync(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
-                return await Parse<T>(response, jsonPath);
+                return await ParseAsync<T>(response, jsonPath);
             });
         }
 
-        public async Task Get(string path,
+        public async Task GetAsync(string path,
             object? queryParams = null,
             CancellationToken? token = null)
         {
-            await Execute(async () =>
+            await ExecuteAsync(async () =>
             {
                 using var http = await GetClient();
                 await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
-        public async Task<T?> Delete<T>(string path,
+        public async Task<T?> DeleteAsync<T>(string path,
             object? queryParams = null,
             string jsonPath = "",
             CancellationToken? token = null)
         {
-            return await GetResult(async () =>
+            return await GetResultAsync(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
-                return await Parse<T>(response, jsonPath);
+                return await ParseAsync<T>(response, jsonPath);
             });
         }
 
-        public async Task Delete(string path,
+        public async Task DeleteAsync(string path,
             object? queryParams = null,
             CancellationToken? token = null)
         {
-            await Execute(async () =>
+            await ExecuteAsync(async () =>
             {
                 using var http = await GetClient();
                 await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
-        private async Task<T?> Send<T>(object data,
+        private async Task<T?> SendAsync<T>(
+                HttpContent content,
                 Func<HttpContent, Task<HttpResponseMessage>> func,
                 string jsonPath = "")
         {
-            return await GetResult(async () =>
-            {
-                using var response = await func(Serialize(data));
-                return await Parse<T>(response, jsonPath);
-            });
+            using (content)
+                return await GetResultAsync(async () =>
+                {
+                    var response = await func(content);
+                    return await ParseAsync<T>(response, jsonPath);
+                });
         }
 
-        private async Task Send(object data,
+        private async Task SendAsync(
+            HttpContent content,
             Func<HttpContent, Task<HttpResponseMessage>> func)
         {
-            await Execute(async () =>
-            {
-                using var response = await func(Serialize(data));
-                await Validate(response);
-            });
+            using (content)
+                await ExecuteAsync(async () =>
+                {
+                    using var response = await func(content);
+                    await ValidateAsync(response);
+                });
         }
 
-        public async Task<T?> Post<T>(string path,
-            object data,
+        public async Task<T?> PostAsync<T>(string path,
+            object? data = null,
             object? queryParams = null,
             string jsonPath = "",
             CancellationToken? token = null)
         {
-            return await Send<T>(data,
+            return await SendAsync<T>(Serialize(data),
                 async (content) =>
                 {
                     using var http = await GetClient();
@@ -236,13 +252,73 @@ namespace Imato.Api.Request
                 jsonPath);
         }
 
-        public async Task<T?> Put<T>(string path,
+        public async Task<T?> PostAsync<T>(
+            string path,
+            string filePath,
+            string fileFieldName = "file",
+            object? queryParams = null,
+            Dictionary<string, string>? parameters = null,
+            string jsonPath = "",
+            CancellationToken? token = null)
+        {
+            return await SendAsync<T>(
+                Serialize(filePath, fileFieldName, parameters),
+                async (content) =>
+                {
+                    using var http = await GetClient();
+                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
+                },
+                jsonPath);
+        }
+
+        public async Task PostAsync(string path,
+            object? data = null,
+            object? queryParams = null,
+            CancellationToken? token = null)
+        {
+            await SendAsync(Serialize(data),
+                async (content) =>
+                {
+                    using var http = await GetClient();
+                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
+                });
+        }
+
+        public async Task PostAsync(string path,
+            string filePath,
+            string fileFieldName = "file",
+            object? queryParams = null,
+            Dictionary<string, string>? parameters = null,
+            CancellationToken? token = null)
+        {
+            await SendAsync(
+                Serialize(filePath, fileFieldName, parameters),
+                async (content) =>
+                {
+                    using var http = await GetClient();
+                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
+                });
+        }
+
+        public async Task<Stream?> PostStreamAsync(string path,
+            object data,
+            object? queryParams = null,
+            CancellationToken? token = null)
+        {
+            var http = await GetClient();
+            var response = await http.PostAsync(GetApiUrl(path, queryParams),
+                Serialize(data),
+                token ?? noToken);
+            return await response.Content.ReadAsStreamAsync();
+        }
+
+        public async Task<T?> PutAsync<T>(string path,
             object data,
             object? queryParams = null,
             string jsonPath = "",
             CancellationToken? token = null)
         {
-            return await Send<T>(data,
+            return await SendAsync<T>(Serialize(data),
                 async (content) =>
                 {
                     var http = await GetClient();
@@ -251,25 +327,12 @@ namespace Imato.Api.Request
                 jsonPath);
         }
 
-        public async Task Post(string path,
-            object data, object?
-            queryParams = null,
+        public async Task PutAsync(string path,
+            object data,
+            object? queryParams = null,
             CancellationToken? token = null)
         {
-            await Send(data,
-                async (content) =>
-                {
-                    using var http = await GetClient();
-                    return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
-                });
-        }
-
-        public async Task Put(string path,
-            object data, object?
-            queryParams = null,
-            CancellationToken? token = null)
-        {
-            await Send(data,
+            await SendAsync(Serialize(data),
                 async (content) =>
                 {
                     using var http = await GetClient();
@@ -277,7 +340,7 @@ namespace Imato.Api.Request
                 });
         }
 
-        private async Task<string> Validate(HttpResponseMessage response)
+        private async Task<string> ValidateAsync(HttpResponseMessage response)
         {
             if (response == null)
             {
@@ -312,16 +375,36 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T> Parse<T>(HttpResponseMessage response, string jsonPath = "")
+        private async Task<T> ParseAsync<T>(HttpResponseMessage response, string jsonPath = "")
         {
-            var str = await Validate(response);
+            var str = await ValidateAsync(response);
             return Deserialize<T>(str, jsonPath);
         }
 
-        public static HttpContent Serialize(object data)
+        public static HttpContent Serialize(object? data)
         {
-            var str = JsonSerializer.Serialize(data);
+            var str = data != null ? JsonSerializer.Serialize(data, jsonSerializerOptions) : "";
             return new StringContent(str, Encoding.UTF8, "application/json");
+        }
+
+        public static HttpContent Serialize(
+            string filePath,
+            string fileFieldName,
+            Dictionary<string, string>? parameters = null)
+        {
+            var content = new StreamContent(File.OpenRead(filePath));
+            var form = new MultipartFormDataContent
+            {
+                { content, fileFieldName, Path.GetFileName(filePath) }
+            };
+            if (parameters != null)
+            {
+                foreach (var p in parameters)
+                {
+                    form.Add(new StringContent(p.Value), $"\"{p.Key}\"");
+                }
+            }
+            return form;
         }
 
         public static T Deserialize<T>(string str, string jsonPath = "")
