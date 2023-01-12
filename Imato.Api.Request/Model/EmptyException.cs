@@ -1,4 +1,6 @@
-﻿namespace Imato.Api.Request
+﻿using System;
+
+namespace Imato.Api.Request
 {
     public class EmptyException : ApplicationException
     {

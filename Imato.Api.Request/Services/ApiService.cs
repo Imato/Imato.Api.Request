@@ -1,9 +1,14 @@
 ﻿using Imato.Try;
 using System.Collections;
-using System.Net;
-using System.Net.Http.Headers;
+using System.Text.Json.Serialization;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.IO;
+using System.Collections.Generic;
 
 namespace Imato.Api.Request
 {
@@ -15,7 +20,9 @@ namespace Imato.Api.Request
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                | JsonIgnoreCondition.WhenWritingDefault
         };
 
         public EventHandler<Exception>? OnError;
@@ -32,7 +39,7 @@ namespace Imato.Api.Request
             if (options.IgnoreSslErrors)
             {
                 handler = new HttpClientHandler();
-                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+                handler.ServerCertificateCustomValidationCallback = (x, y, z, v) => true;
             }
             var http = handler != null ? new HttpClient(handler) : new HttpClient();
             http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
@@ -134,11 +141,18 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T?> GetResultAsync<T>(Func<Task<T>> func)
+        private async Task<T?> GetResultAsync<T>(Func<Task<T>> func) where T : class
         {
             return await Try.Try
                  .Function(func)
-                 .OnError(OnError != null ? e => OnError.Invoke(this, e) : e => throw e)
+                 .OnError((e) =>
+                 {
+                     if (OnError != null)
+                     {
+                         OnError.Invoke(this, e);
+                     }
+                     else { throw e; }
+                 })
                  .Setup(TryOptions)
                  .GetResultAsync();
         }
@@ -147,7 +161,14 @@ namespace Imato.Api.Request
         {
             await Try.Try
                 .Function(func)
-                .OnError(OnError != null ? e => OnError.Invoke(this, e) : e => throw e)
+                .OnError((e) =>
+                {
+                    if (OnError != null)
+                    {
+                        OnError.Invoke(this, e);
+                    }
+                    else { throw e; }
+                })
                 .Setup(TryOptions)
                 .ExecuteAsync();
         }
@@ -167,7 +188,7 @@ namespace Imato.Api.Request
         public async Task<T?> GetAsync<T>(string path,
             object? queryParams = null,
             string jsonPath = "",
-            CancellationToken? token = null)
+            CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
@@ -191,7 +212,7 @@ namespace Imato.Api.Request
         public async Task<T?> DeleteAsync<T>(string path,
             object? queryParams = null,
             string jsonPath = "",
-            CancellationToken? token = null)
+            CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
@@ -215,7 +236,7 @@ namespace Imato.Api.Request
         private async Task<T?> SendAsync<T>(
                 HttpContent content,
                 Func<HttpContent, Task<HttpResponseMessage>> func,
-                string jsonPath = "")
+                string jsonPath = "") where T : class
         {
             using (content)
                 return await GetResultAsync(async () =>
@@ -241,7 +262,7 @@ namespace Imato.Api.Request
             object? data = null,
             object? queryParams = null,
             string jsonPath = "",
-            CancellationToken? token = null)
+            CancellationToken? token = null) where T : class
         {
             return await SendAsync<T>(Serialize(data),
                 async (content) =>
@@ -259,7 +280,7 @@ namespace Imato.Api.Request
             object? queryParams = null,
             Dictionary<string, string>? parameters = null,
             string jsonPath = "",
-            CancellationToken? token = null)
+            CancellationToken? token = null) where T : class
         {
             return await SendAsync<T>(
                 Serialize(filePath, fileFieldName, parameters),
@@ -316,7 +337,7 @@ namespace Imato.Api.Request
             object data,
             object? queryParams = null,
             string jsonPath = "",
-            CancellationToken? token = null)
+            CancellationToken? token = null) where T : class
         {
             return await SendAsync<T>(Serialize(data),
                 async (content) =>
@@ -375,10 +396,12 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T> ParseAsync<T>(HttpResponseMessage response, string jsonPath = "")
+        private async Task<T?> ParseAsync<T>(
+            HttpResponseMessage response,
+            string jsonPath = "") where T : class
         {
             var str = await ValidateAsync(response);
-            return Deserialize<T>(str, jsonPath);
+            return TryDeserialize<T>(str, jsonPath);
         }
 
         public static HttpContent Serialize(object? data)
@@ -438,11 +461,11 @@ namespace Imato.Api.Request
             }
         }
 
-        public static T? TryDeserialize<T>(string str)
+        public static T? TryDeserialize<T>(string str, string jsonPath = "") where T : class
         {
             try
             {
-                return JsonSerializer.Deserialize<T>(str, jsonSerializerOptions);
+                return Deserialize<T>(str, jsonPath);
             }
             catch
             {

@@ -1,4 +1,6 @@
-﻿namespace Imato.Api.Request
+﻿using System.Collections.Generic;
+
+namespace Imato.Api.Request
 {
     public class ApiResult
     {
