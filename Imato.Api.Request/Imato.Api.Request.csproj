@@ -18,7 +18,7 @@
 		<PackageTags>rest api utils</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReleaseNotes>Ready to use</PackageReleaseNotes>
-		<Version>3.0.0</Version>
+		<Version>3.1.0</Version>
 		<AssemblyName>Imato.Api.Request</AssemblyName>
 		<PackageIcon>icon.png</PackageIcon>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
@@ -29,7 +29,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<None Include="..\\README.md" Pack="true" PackagePath="\"/>
+		<None Include="..\\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 	
 	<ItemGroup>
@@ -38,6 +38,7 @@
 	
 	<ItemGroup>
 	  <PackageReference Include="Imato.Try" Version="1.1.0" />
+	  <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.1" />
 	  <PackageReference Include="System.Text.Json" Version="7.0.1" />
 	</ItemGroup>
 </Project>

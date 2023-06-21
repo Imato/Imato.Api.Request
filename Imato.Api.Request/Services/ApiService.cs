@@ -9,12 +9,15 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.IO;
 using System.Collections.Generic;
+using System.Net.Http.Headers;
+using Microsoft.Extensions.Logging;
 
 namespace Imato.Api.Request
 {
     public class ApiService
     {
         private ApiOptions options;
+        private readonly AuthOptions? authOptions;
         private static CancellationToken noToken = CancellationToken.None;
 
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
@@ -28,13 +31,19 @@ namespace Imato.Api.Request
         public EventHandler<Exception>? OnError;
         public Func<HttpClient, Task>? ConfigureRequest;
 
-        public ApiService(ApiOptions? options = null)
+        public ApiService(ApiOptions? options = null,
+            AuthOptions? authOptions = null,
+            LogLevel logLevel = LogLevel.Error)
         {
             this.options = options ?? new ApiOptions();
+            this.authOptions = authOptions;
+            ConsoleOutput.LogLevel = logLevel;
         }
 
         private async Task<HttpClient> GetClient()
         {
+            ConsoleOutput.LogDebug("Create HTTP client");
+
             HttpClientHandler? handler = null;
             if (options.IgnoreSslErrors)
             {
@@ -46,6 +55,27 @@ namespace Imato.Api.Request
             http.Timeout = TimeSpan.FromMilliseconds(options.Timeout > 0 ? options.Timeout : 30000);
             if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(options.ApiUrl);
             if (ConfigureRequest != null) await ConfigureRequest(http);
+
+            if (authOptions?.ApiUser != null)
+            {
+                ConsoleOutput.LogDebug("Using user");
+                ConsoleOutput.LogDebug(authOptions.ApiUser);
+
+                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+                    Convert.ToBase64String(
+                        Encoding.ASCII.GetBytes($"{authOptions.ApiUser.Name}:{authOptions.ApiUser.Password}")));
+            }
+
+            if (authOptions?.ApiKey != null)
+            {
+                ConsoleOutput.LogDebug("Using API key");
+                ConsoleOutput.LogDebug(authOptions.ApiKey);
+
+                http.DefaultRequestHeaders.TryAddWithoutValidation(
+                    authOptions.ApiKey.Name,
+                    authOptions.ApiKey.Key);
+            }
+
             return http;
         }
 
@@ -75,6 +105,7 @@ namespace Imato.Api.Request
             }
             url += QueryString(queryParams);
 
+            ConsoleOutput.LogDebug($"API URL: {url}");
             return url;
         }
 
@@ -194,6 +225,8 @@ namespace Imato.Api.Request
             {
                 using var http = await GetClient();
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
+                ConsoleOutput.LogDebug($"Result: {response.StatusCode}");
+                ConsoleOutput.LogDebug($"Response: {response.Headers}");
                 return await ParseAsync<T>(response, jsonPath);
             });
         }
@@ -282,8 +315,9 @@ namespace Imato.Api.Request
             string jsonPath = "",
             CancellationToken? token = null) where T : class
         {
+            using var fileContent = Serialize(filePath, fileFieldName, parameters);
             return await SendAsync<T>(
-                Serialize(filePath, fileFieldName, parameters),
+                fileContent,
                 async (content) =>
                 {
                     using var http = await GetClient();
@@ -312,8 +346,9 @@ namespace Imato.Api.Request
             Dictionary<string, string>? parameters = null,
             CancellationToken? token = null)
         {
+            using var fileContent = Serialize(filePath, fileFieldName, parameters);
             await SendAsync(
-                Serialize(filePath, fileFieldName, parameters),
+                fileContent,
                 async (content) =>
                 {
                     using var http = await GetClient();
@@ -369,6 +404,8 @@ namespace Imato.Api.Request
             }
 
             var str = await response.Content.ReadAsStringAsync();
+            ConsoleOutput.LogDebug($"Response result: {str}");
+
             var result = TryDeserialize<ApiResult>(str);
             var error = result?.ErrorMessage ?? result?.Error ?? "";
             if (result?.Errors != null && result.Errors.Length > 0)
