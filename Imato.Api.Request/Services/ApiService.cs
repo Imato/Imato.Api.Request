@@ -18,6 +18,7 @@ namespace Imato.Api.Request
     {
         private ApiOptions options;
         private readonly AuthOptions? authOptions;
+        private readonly ILogger<ApiService>? logger;
         private static CancellationToken noToken = CancellationToken.None;
 
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
@@ -33,16 +34,16 @@ namespace Imato.Api.Request
 
         public ApiService(ApiOptions? options = null,
             AuthOptions? authOptions = null,
-            LogLevel logLevel = LogLevel.Error)
+            ILogger<ApiService>? logger = null)
         {
             this.options = options ?? new ApiOptions();
             this.authOptions = authOptions;
-            ConsoleOutput.LogLevel = logLevel;
+            this.logger = logger;
         }
 
         private async Task<HttpClient> GetClient()
         {
-            ConsoleOutput.LogDebug("Create HTTP client");
+            logger?.LogDebug("Create HTTP client");
 
             HttpClientHandler? handler = null;
             if (options.IgnoreSslErrors)
@@ -52,14 +53,13 @@ namespace Imato.Api.Request
             }
             var http = handler != null ? new HttpClient(handler) : new HttpClient();
             http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
-            http.Timeout = TimeSpan.FromMilliseconds(options.Timeout > 0 ? options.Timeout : 30000);
+            http.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
             if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(options.ApiUrl);
             if (ConfigureRequest != null) await ConfigureRequest(http);
 
             if (authOptions?.ApiUser != null)
             {
-                ConsoleOutput.LogDebug("Using user");
-                ConsoleOutput.LogDebug(authOptions.ApiUser);
+                logger?.LogDebug($"Using user: {authOptions.ApiUser.Name}");
 
                 http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
                     Convert.ToBase64String(
@@ -68,8 +68,7 @@ namespace Imato.Api.Request
 
             if (authOptions?.ApiKey != null)
             {
-                ConsoleOutput.LogDebug("Using API key");
-                ConsoleOutput.LogDebug(authOptions.ApiKey);
+                logger?.LogDebug($"Using API key: {authOptions.ApiKey.Name}");
 
                 http.DefaultRequestHeaders.TryAddWithoutValidation(
                     authOptions.ApiKey.Name,
@@ -86,10 +85,10 @@ namespace Imato.Api.Request
 
         private TryOptions TryOptions => new TryOptions
         {
-            Delay = options.Delay,
-            ErrorOnFail = options.ErrorOnFail,
-            RetryCount = options.RetryCount,
-            Timeout = options.Timeout
+            Delay = options.TryOptions.Delay,
+            ErrorOnFail = options.TryOptions.ErrorOnFail,
+            RetryCount = options.TryOptions.RetryCount,
+            Timeout = options.TryOptions.Timeout
         };
 
         public string GetApiUrl(string path, object? queryParams = null)
@@ -105,7 +104,7 @@ namespace Imato.Api.Request
             }
             url += QueryString(queryParams);
 
-            ConsoleOutput.LogDebug($"API URL: {url}");
+            logger?.LogDebug($"API URL: {url}");
             return url;
         }
 
@@ -218,16 +217,16 @@ namespace Imato.Api.Request
 
         public async Task<T?> GetAsync<T>(string path,
             object? queryParams = null,
-            string jsonPath = "",
+            string resultresultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
-                ConsoleOutput.LogDebug($"Result: {response.StatusCode}");
-                ConsoleOutput.LogDebug($"Response: {response.Headers}");
-                return await ParseAsync<T>(response, jsonPath);
+                logger?.LogDebug($"Result: {response.StatusCode}");
+                logger?.LogDebug($"Response: {response.Headers}");
+                return await ParseAsync<T>(response, resultresultJsonPath);
             });
         }
 
@@ -244,14 +243,14 @@ namespace Imato.Api.Request
 
         public async Task<T?> DeleteAsync<T>(string path,
             object? queryParams = null,
-            string jsonPath = "",
+            string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
                 using var http = await GetClient();
                 using var response = await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
-                return await ParseAsync<T>(response, jsonPath);
+                return await ParseAsync<T>(response, resultJsonPath);
             });
         }
 
@@ -269,13 +268,13 @@ namespace Imato.Api.Request
         private async Task<T?> SendAsync<T>(
                 HttpContent content,
                 Func<HttpContent, Task<HttpResponseMessage>> func,
-                string jsonPath = "") where T : class
+                string resultJsonPath = "") where T : class
         {
             using (content)
                 return await GetResultAsync(async () =>
                 {
                     var response = await func(content);
-                    return await ParseAsync<T>(response, jsonPath);
+                    return await ParseAsync<T>(response, resultJsonPath);
                 });
         }
 
@@ -294,7 +293,7 @@ namespace Imato.Api.Request
         public async Task<T?> PostAsync<T>(string path,
             object? data = null,
             object? queryParams = null,
-            string jsonPath = "",
+            string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await SendAsync<T>(Serialize(data),
@@ -303,7 +302,7 @@ namespace Imato.Api.Request
                     using var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 },
-                jsonPath);
+                resultJsonPath);
         }
 
         public async Task<T?> PostAsync<T>(
@@ -312,7 +311,7 @@ namespace Imato.Api.Request
             string fileFieldName = "file",
             object? queryParams = null,
             Dictionary<string, string>? parameters = null,
-            string jsonPath = "",
+            string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             using var fileContent = Serialize(filePath, fileFieldName, parameters);
@@ -323,7 +322,7 @@ namespace Imato.Api.Request
                     using var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 },
-                jsonPath);
+                resultJsonPath);
         }
 
         public async Task PostAsync(string path,
@@ -371,7 +370,7 @@ namespace Imato.Api.Request
         public async Task<T?> PutAsync<T>(string path,
             object data,
             object? queryParams = null,
-            string jsonPath = "",
+            string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await SendAsync<T>(Serialize(data),
@@ -380,7 +379,7 @@ namespace Imato.Api.Request
                     var http = await GetClient();
                     return await http.PutAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 },
-                jsonPath);
+                resultJsonPath);
         }
 
         public async Task PutAsync(string path,
@@ -404,7 +403,7 @@ namespace Imato.Api.Request
             }
 
             var str = await response.Content.ReadAsStringAsync();
-            ConsoleOutput.LogDebug($"Response result: {str}");
+            logger?.LogDebug($"Response result: {str}");
 
             var result = TryDeserialize<ApiResult>(str);
             var error = result?.ErrorMessage ?? result?.Error ?? "";
@@ -435,10 +434,10 @@ namespace Imato.Api.Request
 
         private async Task<T?> ParseAsync<T>(
             HttpResponseMessage response,
-            string jsonPath = "") where T : class
+            string resultJsonPath = "") where T : class
         {
             var str = await ValidateAsync(response);
-            return TryDeserialize<T>(str, jsonPath);
+            return TryDeserialize<T>(str, resultJsonPath);
         }
 
         public static HttpContent Serialize(object? data)
@@ -467,29 +466,29 @@ namespace Imato.Api.Request
             return form;
         }
 
-        public static T Deserialize<T>(string str, string jsonPath = "")
+        public static T Deserialize<T>(string str, string resultJsonPath = "")
         {
             try
             {
-                if (jsonPath == "")
+                if (resultJsonPath == "")
                 {
                     return JsonSerializer.Deserialize<T>(str, jsonSerializerOptions)
-                        ?? throw new EmptyException();
+                        ?? throw new EmptyResponseException();
                 }
                 else
                 {
                     var element = JsonSerializer.Deserialize<JsonElement>(str);
-                    if (element.TryGetProperty(jsonPath, out var property))
+                    if (element.TryGetProperty(resultJsonPath, out var property))
                     {
                         if (property.ValueKind == JsonValueKind.Undefined ||
                             property.ValueKind == JsonValueKind.Null)
                         {
-                            throw new EmptyException();
+                            throw new EmptyResponseException();
                         }
 
-                        return property.Deserialize<T>(jsonSerializerOptions) ?? throw new EmptyException();
+                        return property.Deserialize<T>(jsonSerializerOptions) ?? throw new EmptyResponseException();
                     }
-                    throw new EmptyException();
+                    throw new EmptyResponseException();
                 }
             }
             catch (Exception ex)
@@ -498,11 +497,11 @@ namespace Imato.Api.Request
             }
         }
 
-        public static T? TryDeserialize<T>(string str, string jsonPath = "") where T : class
+        public static T? TryDeserialize<T>(string str, string resultJsonPath = "") where T : class
         {
             try
             {
-                return Deserialize<T>(str, jsonPath);
+                return Deserialize<T>(str, resultJsonPath);
             }
             catch
             {

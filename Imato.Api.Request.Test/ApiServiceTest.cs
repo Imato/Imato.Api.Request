@@ -11,7 +11,8 @@ namespace Imato.Api.Request.Test
         private ApiService service = new ApiService(new ApiOptions
         {
             ApiUrl = "https://www.boredapi.com/api",
-            Timeout = 3000
+            IgnoreSslErrors = true,
+            TryOptions = new TryOptions { Timeout = 3000 }
         });
 
         [Test]

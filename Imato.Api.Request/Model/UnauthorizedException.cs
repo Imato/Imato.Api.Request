@@ -1,8 +1,6 @@
-﻿using System;
-
-namespace Imato.Api.Request
+﻿namespace Imato.Api.Request
 {
-    public class UnauthorizedException : ApplicationException
+    public class UnauthorizedException : HttpException
     {
         public UnauthorizedException(string str) : base($"Unauthorized: {str}")
         {
