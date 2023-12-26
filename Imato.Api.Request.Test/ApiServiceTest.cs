@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Imato.Try;
 using NUnit.Framework;
+using System.Collections.Generic;
 
 namespace Imato.Api.Request.Test
 {
@@ -35,16 +36,26 @@ namespace Imato.Api.Request.Test
         [Test]
         public async Task Get()
         {
-            var result = await service.GetAsync<NewActivity>("/activity");
-            Assert.False(string.IsNullOrEmpty(result?.Activity));
-            Assert.False(string.IsNullOrEmpty(result?.Type));
-            Assert.False(string.IsNullOrEmpty(result?.Key));
-            Assert.IsTrue(result?.Accessibility > 0);
+            var tasks = new List<Task>();
 
-            result = await service.GetAsync<NewActivity>(path: "/activity", queryParams: new { type = "education" });
-            Assert.False(string.IsNullOrEmpty(result?.Activity));
-            Assert.False(string.IsNullOrEmpty(result?.Type));
-            Assert.IsNotEmpty(result?.Key);
+            tasks.Add(Task.Run(async () =>
+            {
+                var result = await service.GetAsync<NewActivity>("/activity");
+                Assert.False(string.IsNullOrEmpty(result?.Activity));
+                Assert.False(string.IsNullOrEmpty(result?.Type));
+                Assert.False(string.IsNullOrEmpty(result?.Key));
+                Assert.IsTrue(result?.Accessibility > 0);
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                var result = await service.GetAsync<NewActivity>(path: "/activity", queryParams: new { type = "education" });
+                Assert.False(string.IsNullOrEmpty(result?.Activity));
+                Assert.False(string.IsNullOrEmpty(result?.Type));
+                Assert.IsNotEmpty(result?.Key);
+            }));
+
+            await Task.WhenAll(tasks);
         }
 
         [Test]
@@ -61,8 +72,9 @@ namespace Imato.Api.Request.Test
             Assert.AreEqual(qs, result);
             result = service.QueryString(null);
             Assert.AreEqual(qs, result);
-            result = service.QueryString("test");
-            Assert.AreEqual(qs, result);
+            var q = "parameter=T";
+            result = service.QueryString(q);
+            Assert.AreEqual("?" + q, result);
             result = service.QueryString(2);
             Assert.AreEqual(qs, result);
             result = service.QueryString(new int[] { 1, 2, 3 });

@@ -1,9 +1,14 @@
-﻿namespace Imato.Api.Request
+﻿using System.Collections.Generic;
+using System.Net;
+
+namespace Imato.Api.Request
 {
     public class AuthOptions
     {
         public ApiUser? ApiUser { get; set; }
         public ApiKey? ApiKey { get; set; }
+        public string? Token { get; set; }
+        public IEnumerable<Cookie>? Cookies { get; set; }
     }
 
     public class ApiUser

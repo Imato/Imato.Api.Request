@@ -16,9 +16,12 @@ namespace Imato.Api.Request
 {
     public class ApiService
     {
-        private ApiOptions options;
+        private readonly ApiOptions options;
         private readonly AuthOptions? authOptions;
-        private readonly ILogger<ApiService>? logger;
+        private readonly HttpClientHandler? customHandler;
+        private readonly ILogger? logger;
+        private HttpClient? client;
+        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(1);
         private static CancellationToken noToken = CancellationToken.None;
 
         private static JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
@@ -29,58 +32,89 @@ namespace Imato.Api.Request
                 | JsonIgnoreCondition.WhenWritingDefault
         };
 
+        /// <summary>
+        /// Add error handler
+        /// </summary>
         public EventHandler<Exception>? OnError;
+
+        /// <summary>
+        /// Update Http client before request
+        /// </summary>
         public Func<HttpClient, Task>? ConfigureRequest;
 
         public ApiService(ApiOptions? options = null,
             AuthOptions? authOptions = null,
-            ILogger<ApiService>? logger = null)
+            HttpClientHandler? customHandler = null,
+            ILogger? logger = null)
         {
             this.options = options ?? new ApiOptions();
             this.authOptions = authOptions;
             this.logger = logger;
+            this.customHandler = customHandler;
         }
 
         private async Task<HttpClient> GetClient()
         {
-            logger?.LogDebug("Create HTTP client");
+            await semaphore.WaitAsync();
 
-            HttpClientHandler? handler = null;
-            if (options.IgnoreSslErrors)
+            if (client == null)
             {
-                handler = new HttpClientHandler();
-                handler.ServerCertificateCustomValidationCallback = (x, y, z, v) => true;
+                logger?.LogDebug("Create HTTP client");
+
+                var handler = customHandler ?? new HttpClientHandler();
+
+                if (options.IgnoreSslErrors)
+                {
+                    handler.ServerCertificateCustomValidationCallback = (x, y, z, v) => true;
+                }
+
+                if (authOptions?.Cookies != null)
+                {
+                    logger?.LogDebug("Using cookies");
+                    handler.UseCookies = true;
+                    foreach (var coockie in authOptions.Cookies)
+                    {
+                        handler.CookieContainer.Add(coockie);
+                    }
+                }
+
+                client = new HttpClient(handler);
+
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+                client.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
+                if (!string.IsNullOrEmpty(options?.ApiUrl))
+                    client.BaseAddress = new Uri(options.ApiUrl);
+                if (ConfigureRequest != null)
+                    await ConfigureRequest(client);
+
+                if (authOptions?.ApiUser != null)
+                {
+                    logger?.LogDebug($"Using user: {authOptions.ApiUser.Name}");
+
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+                        Convert.ToBase64String(
+                            Encoding.ASCII.GetBytes($"{authOptions.ApiUser.Name}:{authOptions.ApiUser.Password}")));
+                }
+
+                if (authOptions?.ApiKey != null)
+                {
+                    logger?.LogDebug($"Using API key: {authOptions.ApiKey.Name}");
+
+                    client.DefaultRequestHeaders.TryAddWithoutValidation(
+                        authOptions.ApiKey.Name,
+                        authOptions.ApiKey.Key);
+                }
+
+                if (authOptions?.Token != null)
+                {
+                    client.DefaultRequestHeaders.TryAddWithoutValidation(
+                        "Authorization",
+                        $"Bearer {authOptions.Token}");
+                }
             }
-            var http = handler != null ? new HttpClient(handler) : new HttpClient();
-            http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
-            http.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
-            if (!string.IsNullOrEmpty(options?.ApiUrl)) http.BaseAddress = new Uri(options.ApiUrl);
-            if (ConfigureRequest != null) await ConfigureRequest(http);
 
-            if (authOptions?.ApiUser != null)
-            {
-                logger?.LogDebug($"Using user: {authOptions.ApiUser.Name}");
-
-                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
-                    Convert.ToBase64String(
-                        Encoding.ASCII.GetBytes($"{authOptions.ApiUser.Name}:{authOptions.ApiUser.Password}")));
-            }
-
-            if (authOptions?.ApiKey != null)
-            {
-                logger?.LogDebug($"Using API key: {authOptions.ApiKey.Name}");
-
-                http.DefaultRequestHeaders.TryAddWithoutValidation(
-                    authOptions.ApiKey.Name,
-                    authOptions.ApiKey.Key);
-            }
-
-            return http;
-        }
-
-        public void Configure(ApiOptions options)
-        {
-            this.options = options;
+            semaphore.Release();
+            return client!;
         }
 
         private TryOptions TryOptions => new TryOptions
@@ -117,9 +151,19 @@ namespace Imato.Api.Request
         {
             if (obj == null) return "";
 
-            var str = new StringBuilder();
-            bool isFirst = true;
-            str.Append("?");
+            var builder = new StringBuilder();
+            builder.Append("?");
+
+            if (obj is string)
+            {
+                var str = obj.ToString();
+                if (str?.Length > 1)
+                {
+                    builder.Append(str);
+                    return builder.ToString();
+                }
+            }
+
             foreach (var p in obj.ToDictionaty())
             {
                 if (p.Value != null && !string.IsNullOrEmpty(p.Value.ToString()))
@@ -130,13 +174,13 @@ namespace Imato.Api.Request
                         var fa = true;
                         foreach (var item in array)
                         {
-                            if (!fa) str.Append(',');
+                            if (!fa) builder.Append(',');
                             else
                             {
-                                AddKey(str, p.Key);
+                                AddKey(builder, p.Key);
                             }
 
-                            str.Append(item.ToString());
+                            builder.Append(item.ToString());
                             fa = false;
                         }
                     }
@@ -146,21 +190,24 @@ namespace Imato.Api.Request
                         {
                             if (date.Year > 1)
                             {
-                                AddKey(str, p.Key);
-                                str.Append(date.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+                                AddKey(builder, p.Key);
+                                date = date.Kind == DateTimeKind.Local
+                                    ? date.ToUniversalTime()
+                                    : date;
+                                builder.Append(date.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
                             }
                         }
                         else
                         {
-                            AddKey(str, p.Key);
-                            str.Append(p.Value);
+                            AddKey(builder, p.Key);
+                            builder.Append(p.Value);
                         }
                     }
                 }
             }
 
-            if (str.Length == 1) return "";
-            return str.ToString();
+            if (builder.Length == 1) return "";
+            return builder.ToString();
         }
 
         private StringBuilder AddKey(StringBuilder str, string key)
@@ -171,7 +218,7 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T?> GetResultAsync<T>(Func<Task<T>> func) where T : class
+        private async Task<T> GetResultAsync<T>(Func<Task<T>> func) where T : class
         {
             return await Try.Try
                  .Function(func)
@@ -215,18 +262,18 @@ namespace Imato.Api.Request
             });
         }
 
-        public async Task<T?> GetAsync<T>(string path,
+        public async Task<T> GetAsync<T>(string path,
             object? queryParams = null,
-            string resultresultJsonPath = "",
+            string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
-                using var http = await GetClient();
+                var http = await GetClient();
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
                 logger?.LogDebug($"Result: {response.StatusCode}");
                 logger?.LogDebug($"Response: {response.Headers}");
-                return await ParseAsync<T>(response, resultresultJsonPath);
+                return await ParseAsync<T>(response, resultJsonPath);
             });
         }
 
@@ -236,19 +283,19 @@ namespace Imato.Api.Request
         {
             await ExecuteAsync(async () =>
             {
-                using var http = await GetClient();
+                var http = await GetClient();
                 await http.GetAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
-        public async Task<T?> DeleteAsync<T>(string path,
+        public async Task<T> DeleteAsync<T>(string path,
             object? queryParams = null,
             string resultJsonPath = "",
             CancellationToken? token = null) where T : class
         {
             return await GetResultAsync(async () =>
             {
-                using var http = await GetClient();
+                var http = await GetClient();
                 using var response = await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
                 return await ParseAsync<T>(response, resultJsonPath);
             });
@@ -260,12 +307,12 @@ namespace Imato.Api.Request
         {
             await ExecuteAsync(async () =>
             {
-                using var http = await GetClient();
+                var http = await GetClient();
                 await http.DeleteAsync(GetApiUrl(path, queryParams), token ?? noToken);
             });
         }
 
-        private async Task<T?> SendAsync<T>(
+        private async Task<T> SendAsync<T>(
                 HttpContent content,
                 Func<HttpContent, Task<HttpResponseMessage>> func,
                 string resultJsonPath = "") where T : class
@@ -299,7 +346,7 @@ namespace Imato.Api.Request
             return await SendAsync<T>(Serialize(data),
                 async (content) =>
                 {
-                    using var http = await GetClient();
+                    var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 },
                 resultJsonPath);
@@ -319,7 +366,7 @@ namespace Imato.Api.Request
                 fileContent,
                 async (content) =>
                 {
-                    using var http = await GetClient();
+                    var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 },
                 resultJsonPath);
@@ -333,7 +380,7 @@ namespace Imato.Api.Request
             await SendAsync(Serialize(data),
                 async (content) =>
                 {
-                    using var http = await GetClient();
+                    var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 });
         }
@@ -350,7 +397,7 @@ namespace Imato.Api.Request
                 fileContent,
                 async (content) =>
                 {
-                    using var http = await GetClient();
+                    var http = await GetClient();
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 });
         }
@@ -390,7 +437,7 @@ namespace Imato.Api.Request
             await SendAsync(Serialize(data),
                 async (content) =>
                 {
-                    using var http = await GetClient();
+                    var http = await GetClient();
                     return await http.PutAsync(GetApiUrl(path, queryParams), content, token ?? noToken);
                 });
         }
@@ -432,12 +479,12 @@ namespace Imato.Api.Request
             return str;
         }
 
-        private async Task<T?> ParseAsync<T>(
+        private async Task<T> ParseAsync<T>(
             HttpResponseMessage response,
             string resultJsonPath = "") where T : class
         {
             var str = await ValidateAsync(response);
-            return TryDeserialize<T>(str, resultJsonPath);
+            return Deserialize<T>(str, resultJsonPath);
         }
 
         public static HttpContent Serialize(object? data)
@@ -473,28 +520,35 @@ namespace Imato.Api.Request
                 if (resultJsonPath == "")
                 {
                     return JsonSerializer.Deserialize<T>(str, jsonSerializerOptions)
-                        ?? throw new EmptyResponseException();
+                        ?? throw new DeserializationException<T>();
                 }
                 else
                 {
                     var element = JsonSerializer.Deserialize<JsonElement>(str);
-                    if (element.TryGetProperty(resultJsonPath, out var property))
+                    foreach (var p in resultJsonPath.Split("."))
                     {
-                        if (property.ValueKind == JsonValueKind.Undefined ||
-                            property.ValueKind == JsonValueKind.Null)
-                        {
-                            throw new EmptyResponseException();
-                        }
-
-                        return property.Deserialize<T>(jsonSerializerOptions) ?? throw new EmptyResponseException();
+                        element = GetProperty(element, p);
                     }
-                    throw new EmptyResponseException();
+
+                    return element.Deserialize<T>(jsonSerializerOptions)
+                        ?? throw new DeserializationException<T>();
                 }
             }
             catch (Exception ex)
             {
                 throw new HttpRequestException($"Cannot parse response {str}", ex);
             }
+        }
+
+        public static JsonElement GetProperty(JsonElement element, string name)
+        {
+            if (element.TryGetProperty(name, out var property)
+                && property.ValueKind != JsonValueKind.Undefined
+                && property.ValueKind != JsonValueKind.Null)
+            {
+                return property;
+            }
+            throw new DeserializationException($"Cannot find property {name} in JSON string");
         }
 
         public static T? TryDeserialize<T>(string str, string resultJsonPath = "") where T : class
