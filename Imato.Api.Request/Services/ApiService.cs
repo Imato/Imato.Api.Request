@@ -14,9 +14,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Imato.Api.Request
 {
-    public class ApiService
+    public class ApiService : IApiService
     {
-        private readonly ApiOptions options;
+        private ApiOptions options;
         private readonly AuthOptions? authOptions;
         private readonly HttpClientHandler? customHandler;
         private readonly ILogger? logger;
@@ -53,6 +53,11 @@ namespace Imato.Api.Request
             this.customHandler = customHandler;
         }
 
+        public void Configure(ApiOptions options)
+        {
+            this.options = options;
+        }
+
         private async Task<HttpClient> GetClient()
         {
             await semaphore.WaitAsync();
@@ -84,8 +89,6 @@ namespace Imato.Api.Request
                 client.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
                 if (!string.IsNullOrEmpty(options?.ApiUrl))
                     client.BaseAddress = new Uri(options.ApiUrl);
-                if (ConfigureRequest != null)
-                    await ConfigureRequest(client);
 
                 if (authOptions?.ApiUser != null)
                 {
@@ -114,6 +117,9 @@ namespace Imato.Api.Request
             }
 
             semaphore.Release();
+
+            if (ConfigureRequest != null)
+                await ConfigureRequest(client);
             return client!;
         }
 
@@ -125,7 +131,7 @@ namespace Imato.Api.Request
             Timeout = options.TryOptions.Timeout
         };
 
-        public string GetApiUrl(string path, object? queryParams = null)
+        public string GetApiUrl(string path = "", object? queryParams = null)
         {
             var url = path;
             if (!path.StartsWith("http"))
@@ -171,17 +177,9 @@ namespace Imato.Api.Request
                     var array = p.Value as IEnumerable;
                     if (array != null && !(p.Value is string))
                     {
-                        var fa = true;
                         foreach (var item in array)
                         {
-                            if (!fa) builder.Append(',');
-                            else
-                            {
-                                AddKey(builder, p.Key);
-                            }
-
-                            builder.Append(item.ToString());
-                            fa = false;
+                            AddParameter(builder, p.Key, item.ToString());
                         }
                     }
                     else
@@ -190,17 +188,15 @@ namespace Imato.Api.Request
                         {
                             if (date.Year > 1)
                             {
-                                AddKey(builder, p.Key);
                                 date = date.Kind == DateTimeKind.Local
                                     ? date.ToUniversalTime()
                                     : date;
-                                builder.Append(date.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+                                AddParameter(builder, p.Key, date.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
                             }
                         }
                         else
                         {
-                            AddKey(builder, p.Key);
-                            builder.Append(p.Value);
+                            AddParameter(builder, p.Key, p.Value.ToString());
                         }
                     }
                 }
@@ -210,11 +206,12 @@ namespace Imato.Api.Request
             return builder.ToString();
         }
 
-        private StringBuilder AddKey(StringBuilder str, string key)
+        private StringBuilder AddParameter(StringBuilder str, string key, string value)
         {
             if (str.Length > 1) str.Append("&");
             str.Append(key);
             str.Append("=");
+            str.Append(value);
             return str;
         }
 
@@ -250,7 +247,7 @@ namespace Imato.Api.Request
                 .ExecuteAsync();
         }
 
-        public async Task<Stream?> GetStreamAsync(string path,
+        public async Task<Stream?> GetStreamAsync(string path = "",
             object? queryParams = null,
             CancellationToken? token = null)
         {

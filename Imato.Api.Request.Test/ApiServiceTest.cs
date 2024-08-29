@@ -87,7 +87,7 @@ namespace Imato.Api.Request.Test
                 Test3 = DateTime.Parse("2022-01-01 01:12:12.432"),
                 Test4 = new int[] { 1, 2, 3 }
             });
-            Assert.AreEqual("?Test1=1&Test2=t&Test3=2022-01-01T01:12:12.000Z&Test4=1,2,3",
+            Assert.AreEqual("?Test1=1&Test2=t&Test3=2022-01-01T01:12:12.000Z&Test4=1&Test4=2&Test4=3",
                 result);
 
             result = service.QueryString(new { test1 = "", test4 = new int[0] });
