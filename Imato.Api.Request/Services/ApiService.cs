@@ -486,7 +486,19 @@ namespace Imato.Api.Request
 
         public static HttpContent Serialize(object? data)
         {
-            var str = data != null ? JsonSerializer.Serialize(data, jsonSerializerOptions) : "";
+            var str = string.Empty;
+            if (data?.GetType() == typeof(string))
+            {
+                str = data?.ToString() ?? string.Empty;
+            }
+            else
+            {
+                if (data == null)
+                {
+                    str = JsonSerializer.Serialize(data, jsonSerializerOptions);
+                }
+            }
+
             return new StringContent(str, Encoding.UTF8, "application/json");
         }
 
