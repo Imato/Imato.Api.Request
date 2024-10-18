@@ -493,7 +493,7 @@ namespace Imato.Api.Request
             }
             else
             {
-                if (data == null)
+                if (data != null)
                 {
                     str = JsonSerializer.Serialize(data, jsonSerializerOptions);
                 }
@@ -538,6 +538,11 @@ namespace Imato.Api.Request
                     {
                         element = GetProperty(element, p);
                     }
+                    if (element.ValueKind == JsonValueKind.Undefined
+                        || element.ValueKind == JsonValueKind.Null)
+                    {
+                        return default;
+                    }
 
                     return element.Deserialize<T>(jsonSerializerOptions)
                         ?? throw new DeserializationException<T>();
@@ -551,9 +556,7 @@ namespace Imato.Api.Request
 
         public static JsonElement GetProperty(JsonElement element, string name)
         {
-            if (element.TryGetProperty(name, out var property)
-                && property.ValueKind != JsonValueKind.Undefined
-                && property.ValueKind != JsonValueKind.Null)
+            if (element.TryGetProperty(name, out var property))
             {
                 return property;
             }
