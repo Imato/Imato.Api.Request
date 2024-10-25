@@ -48,4 +48,8 @@
 	<ItemGroup>
 	  <Folder Include="Extensions\" />
 	</ItemGroup>
+
+	<Target Name="CopyPackege" AfterTargets="Pack">
+		<Exec Command="copy $(OutputPath)..\$(PackageId).$(PackageVersion).nupkg $(NUGET_PATH)local /Y&#xD;&#xA;rmdir $(NUGET_PATH)packages\$(PackageId)\$(PackageVersion) /Q /S" />
+	</Target>
 </Project>

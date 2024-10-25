@@ -23,11 +23,11 @@ namespace Imato.Api.Request.Test
             };
             var resutl = test.ToDictionaty();
 
-            Assert.AreEqual(test.Int, resutl["Int"]);
-            Assert.AreEqual(test.Str, resutl["Str"]);
-            Assert.AreEqual(test.Date, resutl["Date"]);
-            Assert.AreEqual(test.Null, resutl["Null"]);
-            Assert.AreEqual(test.test, resutl["test"]);
+            Assert.That(test.Int, Is.EqualTo(resutl["Int"]));
+            Assert.That(test.Str, Is.EqualTo(resutl["Str"]));
+            Assert.That(test.Date, Is.EqualTo(resutl["Date"]));
+            Assert.That(test.Null, Is.EqualTo(resutl["Null"]));
+            Assert.That(test.test, Is.EqualTo(resutl["test"]));
         }
     }
 }
