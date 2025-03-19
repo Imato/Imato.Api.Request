@@ -18,7 +18,7 @@
 		<PackageTags>rest api utils</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReleaseNotes>Ready to use</PackageReleaseNotes>
-		<Version>3.4.2</Version>
+		<Version>3.4.4</Version>
 		<AssemblyName>Imato.Api.Request</AssemblyName>
 		<PackageIcon>icon.png</PackageIcon>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
