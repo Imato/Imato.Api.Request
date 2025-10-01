@@ -57,7 +57,7 @@ namespace Imato.Api.Request
             this.options = options;
         }
 
-        private async Task<HttpClient> GetClient(CancellationToken token)
+        public async Task<HttpClient> GetClientAsync(CancellationToken token)
         {
             await semaphore.WaitAsync(token);
 
@@ -66,12 +66,10 @@ namespace Imato.Api.Request
                 logger?.LogDebug("Create HTTP client");
 
                 var handler = customHandler ?? new HttpClientHandler();
-
                 if (options.IgnoreSslErrors)
                 {
                     handler.ServerCertificateCustomValidationCallback = (x, y, z, v) => true;
                 }
-
                 if (authOptions?.Cookies != null)
                 {
                     logger?.LogDebug("Using cookies");
@@ -83,7 +81,6 @@ namespace Imato.Api.Request
                 }
 
                 client = new HttpClient(handler);
-
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
                 client.Timeout = TimeSpan.FromMilliseconds(options.TryOptions.Timeout > 0 ? options.TryOptions.Timeout : 30000);
                 if (!string.IsNullOrEmpty(options?.ApiUrl))
@@ -252,7 +249,7 @@ namespace Imato.Api.Request
         {
             return await GetResultAsync(async () =>
             {
-                var http = await GetClient(token);
+                var http = await GetClientAsync(token);
                 var response = await http.GetAsync(GetApiUrl(path, queryParams), token);
                 return await response.Content.ReadAsStreamAsync();
             });
@@ -265,7 +262,7 @@ namespace Imato.Api.Request
         {
             return await GetResultAsync(async () =>
             {
-                var http = await GetClient(token);
+                var http = await GetClientAsync(token);
                 using var response = await http.GetAsync(GetApiUrl(path, queryParams), token);
                 logger?.LogDebug($"Result: {response.StatusCode}");
                 logger?.LogDebug($"Response: {response.Headers}");
@@ -279,7 +276,7 @@ namespace Imato.Api.Request
         {
             await ExecuteAsync(async () =>
             {
-                var http = await GetClient(token);
+                var http = await GetClientAsync(token);
                 await http.GetAsync(GetApiUrl(path, queryParams), token);
             });
         }
@@ -291,7 +288,7 @@ namespace Imato.Api.Request
         {
             return await GetResultAsync(async () =>
             {
-                var http = await GetClient(token);
+                var http = await GetClientAsync(token);
                 using var response = await http.DeleteAsync(GetApiUrl(path, queryParams), token);
                 return await ParseAsync<T>(response, resultJsonPath);
             });
@@ -303,7 +300,7 @@ namespace Imato.Api.Request
         {
             await ExecuteAsync(async () =>
             {
-                var http = await GetClient(token);
+                var http = await GetClientAsync(token);
                 await http.DeleteAsync(GetApiUrl(path, queryParams), token);
             });
         }
@@ -329,7 +326,7 @@ namespace Imato.Api.Request
                 await ExecuteAsync(async () =>
                 {
                     using var response = await func(content);
-                    await ValidateAsync(response);
+                    await GetContentAsync(response);
                 });
         }
 
@@ -342,7 +339,7 @@ namespace Imato.Api.Request
             return await SendAsync<T>(Serialize(data),
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token);
                 },
                 resultJsonPath);
@@ -362,7 +359,7 @@ namespace Imato.Api.Request
                 fileContent,
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token);
                 },
                 resultJsonPath);
@@ -376,7 +373,7 @@ namespace Imato.Api.Request
             await SendAsync(Serialize(data),
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token);
                 });
         }
@@ -393,7 +390,7 @@ namespace Imato.Api.Request
                 fileContent,
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PostAsync(GetApiUrl(path, queryParams), content, token);
                 });
         }
@@ -403,10 +400,11 @@ namespace Imato.Api.Request
             object? queryParams = null,
             CancellationToken token = default)
         {
-            var http = await GetClient(token);
+            var http = await GetClientAsync(token);
             var response = await http.PostAsync(GetApiUrl(path, queryParams),
                 Serialize(data),
                 token);
+            response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStreamAsync();
         }
 
@@ -419,7 +417,7 @@ namespace Imato.Api.Request
             return await SendAsync<T>(Serialize(data),
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PutAsync(GetApiUrl(path, queryParams), content, token);
                 },
                 resultJsonPath);
@@ -433,12 +431,12 @@ namespace Imato.Api.Request
             await SendAsync(Serialize(data),
                 async (content) =>
                 {
-                    var http = await GetClient(token);
+                    var http = await GetClientAsync(token);
                     return await http.PutAsync(GetApiUrl(path, queryParams), content, token);
                 });
         }
 
-        private async Task<string> ValidateAsync(HttpResponseMessage response)
+        private async Task<string> GetContentAsync(HttpResponseMessage response)
         {
             if (response == null)
             {
@@ -464,6 +462,7 @@ namespace Imato.Api.Request
             if (!response.IsSuccessStatusCode || !string.IsNullOrEmpty(error))
             {
                 error = error?.Length > 0 ? error : str;
+                error += $"\n Request {response.RequestMessage?.Method} {response.RequestMessage?.RequestUri} body: {response.RequestMessage?.Content?.ReadAsStringAsync()?.Result ?? "Empty"}";
                 error = $"{(int)response.StatusCode}: {error}";
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
@@ -479,7 +478,7 @@ namespace Imato.Api.Request
             HttpResponseMessage response,
             string resultJsonPath = "") where T : class
         {
-            var str = await ValidateAsync(response);
+            var str = await GetContentAsync(response);
             return Deserialize<T>(str, resultJsonPath);
         }
 

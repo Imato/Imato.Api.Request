@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -7,6 +8,8 @@ namespace Imato.Api.Request
 {
     public interface IApiService
     {
+        Task<HttpClient> GetClientAsync(CancellationToken token);
+
         Task DeleteAsync(string path, object? queryParams = null, CancellationToken token = default);
 
         Task<T> DeleteAsync<T>(string path, object? queryParams = null, string resultJsonPath = "", CancellationToken token = default) where T : class;
